@@ -7,50 +7,43 @@ import (
 	"net/http"
 )
 
-func MessageHandler(writer http.ResponseWriter, request *http.Request) {
-	if request.Method != http.MethodPost {
-		log.Printf("Method \"%s\" Not Allowed\n", request.Method)
-		http.Error(writer, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	data, err := io.ReadAll(request.Body)
-	if err != nil {
-		log.Printf("Error reading body: %v", err)
-		http.Error(writer, "Error reading body", http.StatusInternalServerError)
-		return
-	}
-	defer request.Body.Close()
+func NewTidioHandler(chatService *service.ChatService) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost {
+			http.Error(writer, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		body, err := io.ReadAll(request.Body)
+		defer request.Body.Close()
+		if err != nil {
+			log.Printf("read error: %v", err)
+			http.Error(writer, "Internal Error", http.StatusInternalServerError)
+			return
+		}
 
-	tidioRequest, err := TidioToDomain(data)
-	if err != nil {
-		log.Printf("Error reading tidio tidio_message: %v", err)
-		http.Error(writer, "Error reading tidio tidio_message", http.StatusInternalServerError)
-		return
-	}
+		incomingMessage, err := TidioToDomain(body)
+		if err != nil {
+			log.Printf("decode error: %v", err)
+			http.Error(writer, "Bad Request", http.StatusBadRequest)
+			return
+		}
 
-	chatService := service.NewChatService()
+		AIResponse, err := chatService.ProcessMessage(incomingMessage)
+		if err != nil {
+			log.Printf("chatService error: %v", err)
+			http.Error(writer, "Internal Error", http.StatusInternalServerError)
+			return
+		}
 
-	chatGPTResponse, err := chatService.ProcessMessage(tidioRequest)
-	if err != nil {
-		log.Printf("Error creating chat: %v", err)
-		http.Error(writer, "Error creating chat", http.StatusInternalServerError)
-		return
-	}
+		outgoingMessage, err := ToTidio(AIResponse)
+		if err != nil {
+			log.Printf("encode error: %v", err)
+			http.Error(writer, "Internal Error", http.StatusInternalServerError)
+			return
+		}
 
-	writer.Header().Set("Content-Type", "application/json")
-	writer.WriteHeader(http.StatusOK)
-
-	toTidio, err := ToTidio(chatGPTResponse)
-	if err != nil {
-		log.Printf("Error converting to tidio: %v", err)
-		http.Error(writer, "Error converting to tidio", http.StatusInternalServerError)
-		return
-	}
-
-	_, err = writer.Write(toTidio)
-	if err != nil {
-		log.Println("Failed to write response")
-		http.Error(writer, "Internal server error", http.StatusInternalServerError)
-		return
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusOK)
+		writer.Write(outgoingMessage)
 	}
 }

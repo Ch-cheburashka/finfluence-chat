@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"finfluence-chat/internal/model"
+	"fmt"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"os"
@@ -10,15 +11,15 @@ import (
 
 type ChatService struct {
 	OpenaiClient openai.Client
-	History      []model.Message
+	History      HistoryStore
 }
 
-func NewChatService() *ChatService {
+func NewChatService(historyStore HistoryStore) *ChatService {
 	return &ChatService{
 		OpenaiClient: openai.NewClient(
 			option.WithAPIKey(os.Getenv("OPENAI_API_KEY")),
 		),
-		History: make([]model.Message, 0),
+		History: historyStore,
 	}
 }
 
@@ -35,22 +36,23 @@ func convertToUnion(messages []model.Message) []openai.ChatCompletionMessagePara
 }
 
 func (s *ChatService) ProcessMessage(message model.Message) (model.Message, error) {
-	s.History = append(s.History, message)
-	client := ChatService{
-		OpenaiClient: s.OpenaiClient,
-		History:      s.History,
-	}
-	chatCompletion, err := client.OpenaiClient.Chat.Completions.New(context.TODO(), openai.ChatCompletionNewParams{
-		Messages: convertToUnion(s.History),
+	s.History.Add(message.UserID, message)
+	chatCompletion, err := s.OpenaiClient.Chat.Completions.New(context.TODO(), openai.ChatCompletionNewParams{
+		Messages: convertToUnion(s.History.Get(message.UserID)),
 		Model:    openai.ChatModelGPT4,
 	})
 	if err != nil {
 		return model.Message{}, err
 	}
-	return model.Message{
+	if len(chatCompletion.Choices) == 0 {
+		return model.Message{}, fmt.Errorf("openai returned no choices")
+	}
+	aiMessage := model.Message{
 		UserID:    message.UserID,
 		Text:      chatCompletion.Choices[0].Message.Content,
 		Role:      model.RoleAssistant,
 		Timestamp: chatCompletion.Created,
-	}, nil
+	}
+	s.History.Add(aiMessage.UserID, aiMessage)
+	return aiMessage, nil
 }
