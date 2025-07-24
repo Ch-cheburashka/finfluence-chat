@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"finfluence-chat/internal/service"
 	"finfluence-chat/internal/transport"
 	"flag"
@@ -15,10 +16,7 @@ import (
 func main() {
 	store := service.NewInMemoryStore()
 	chatService := service.NewChatService(store)
-	handler := http.TimeoutHandler(
-		transport.NewTidioHandler(chatService),
-		15*time.Second, `{"error":"timeout"}`,
-	)
+	handler := transport.NewTidioHandler(chatService)
 
 	http.Handle("/message", handler)
 
@@ -26,16 +24,13 @@ func main() {
 	flag.Parse()
 
 	server := &http.Server{
-		Addr:         ":" + *port,
-		Handler:      nil,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 20 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:    ":" + *port,
+		Handler: nil,
 	}
 
 	go func() {
 		log.Printf("HTTP server listening on %s …", server.Addr)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("listen: %v", err)
 		}
 	}()

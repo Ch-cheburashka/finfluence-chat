@@ -35,9 +35,9 @@ func convertToUnion(messages []model.Message) []openai.ChatCompletionMessagePara
 	return converted
 }
 
-func (s *ChatService) ProcessMessage(message model.Message) (model.Message, error) {
+func (s *ChatService) ProcessMessage(ctx context.Context, message model.Message) (model.Message, error) {
 	s.History.Add(message.UserID, message)
-	chatCompletion, err := s.OpenaiClient.Chat.Completions.New(context.TODO(), openai.ChatCompletionNewParams{
+	chatCompletion, err := s.OpenaiClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: convertToUnion(s.History.Get(message.UserID)),
 		Model:    openai.ChatModelGPT4,
 	})

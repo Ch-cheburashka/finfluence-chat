@@ -1,10 +1,13 @@
 package transport
 
 import (
+	"context"
 	"finfluence-chat/internal/service"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"time"
 )
 
 func NewTidioHandler(chatService *service.ChatService) http.HandlerFunc {
@@ -13,6 +16,10 @@ func NewTidioHandler(chatService *service.ChatService) http.HandlerFunc {
 			http.Error(writer, "Method Not Allowed", http.StatusMethodNotAllowed)
 			return
 		}
+
+		ctx, cancel := context.WithTimeout(request.Context(), 60*time.Second)
+		defer cancel()
+
 		body, err := io.ReadAll(request.Body)
 		defer request.Body.Close()
 		if err != nil {
@@ -28,10 +35,10 @@ func NewTidioHandler(chatService *service.ChatService) http.HandlerFunc {
 			return
 		}
 
-		AIResponse, err := chatService.ProcessMessage(incomingMessage)
+		AIResponse, err := chatService.ProcessMessage(ctx, incomingMessage)
 		if err != nil {
 			log.Printf("chatService error: %v", err)
-			http.Error(writer, "Internal Error", http.StatusInternalServerError)
+			http.Error(writer, fmt.Sprint(err), http.StatusInternalServerError)
 			return
 		}
 
@@ -44,6 +51,11 @@ func NewTidioHandler(chatService *service.ChatService) http.HandlerFunc {
 
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(http.StatusOK)
-		writer.Write(outgoingMessage)
+		_, err = writer.Write(outgoingMessage)
+		if err != nil {
+			log.Println("Failed to write response")
+			http.Error(writer, "Internal server error", http.StatusInternalServerError)
+			return
+		}
 	}
 }
