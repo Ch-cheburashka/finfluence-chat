@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	store := service.NewInMemoryStore()
+	store := service.NewInMemoryStore(50)
 	chatService := service.NewChatService(store)
 	handler := transport.NewTidioHandler(chatService)
 
